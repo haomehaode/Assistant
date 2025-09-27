@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AI 助手设置</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 16px; max-width: 720px; }
+    label { display:block; margin-top:12px; }
+    input, select { width: 100%; padding: 8px; }
+    .row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; }
+    .card { background: #f7f7f7; padding: 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h2>AI 助手设置</h2>
+  <div class="card">
+    <div class="row">
+      <label for="apiUrl">API 地址</label>
+      <input id="apiUrl" placeholder="https://api.360.cn/v1/chat/completions" />
+    </div>
+    <div class="row">
+      <label for="apiKey">API Key</label>
+      <input id="apiKey" placeholder="Bearer ..." />
+    </div>
+    <div class="row">
+      <label for="model">模型</label>
+      <input id="model" placeholder="gpt-4" />
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button id="save">保存</button>
+      <span id="status"></span>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="ai_service.js"></script>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AI 浏览器任务助手 - 侧边栏</title>
+  <style>
+    :root { --gap: 8px; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #ffffff; color: #111827; }
+
+    .wrap { 
+      display: flex; 
+      flex-direction: column; 
+      height: 100vh; 
+      padding: 12px; 
+      box-sizing: border-box; 
+      gap: var(--gap); 
+    }
+
+    .header { 
+      flex-shrink: 0;
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between; 
+    }
+    .title { font-weight: 600; font-size: 14px; color: #374151; }
+
+    .input { 
+      flex-shrink: 0;
+      display: flex; 
+      flex-direction: column; 
+      gap: var(--gap); 
+    }
+    textarea { 
+      width: 100%; 
+      min-height: 80px; 
+      max-height: 120px; 
+      resize: vertical; 
+      padding: 10px; 
+      border: 1px solid #d1d5db; 
+      border-radius: 8px; 
+      box-sizing: border-box; 
+      font-size: 13px; 
+      font-family: inherit;
+      background: #ffffff;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .toolbar { 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between; 
+      gap: var(--gap); 
+    }
+    .status { 
+      font-size: 12px; 
+      color: #6b7280; 
+      overflow: hidden; 
+      text-overflow: ellipsis; 
+      white-space: nowrap; 
+      flex: 1;
+    }
+    button { 
+      padding: 10px 16px; 
+      border: 0; 
+      border-radius: 8px; 
+      background: #3b82f6; 
+      color: #ffffff; 
+      cursor: pointer; 
+      font-weight: 600; 
+      font-size: 13px;
+      flex-shrink: 0;
+      transition: background-color 0.2s;
+    }
+    button:hover { 
+      background: #2563eb; 
+    }
+    button:disabled { 
+      opacity: .6; 
+      cursor: not-allowed; 
+      background: #9ca3af;
+    }
+
+    .log { 
+      flex: 1;
+      background: #f9fafb; 
+      color: #374151; 
+      border-radius: 8px; 
+      padding: 12px; 
+      white-space: pre-wrap; 
+      overflow: auto; 
+      font-family: ui-monospace, Menlo, Consolas, monospace; 
+      line-height: 1.4; 
+      border: 1px solid #e5e7eb; 
+      min-height: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="title">AI 浏览器任务助手</div>
+    </div>
+
+    <div class="input">
+      <textarea id="prompt" placeholder="输入你的任务，例如：在淘宝搜索无线降噪耳机并筛选"></textarea>
+      <div class="toolbar">
+        <div id="status" class="status"></div>
+        <button id="btn-go">执行</button>
+      </div>
+    </div>
+
+    <div id="log" class="log"></div>
+  </div>
+  <script src="config.js"></script>
+  <script src="ai_service.js"></script>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

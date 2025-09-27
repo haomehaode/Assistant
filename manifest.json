@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "AI 浏览器任务助手",
+  "description": "将自然语言任务转为浏览器与页面内可执行步骤，并自动执行。",
+  "version": "0.1.1",
+  "action": {
+    "default_title": "AI 浏览器任务助手"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "config.js",
+        "ai_service.js",
+        "page_analyzer.js",
+        "execution_engine.js",
+        "smart_executor.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "config.js",
+        "ai_service.js",
+        "page_analyzer.js",
+        "execution_engine.js",
+        "smart_executor.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
