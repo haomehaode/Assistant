@@ -130,7 +130,69 @@ class SmartExecutor {
 
           // 监督智能体介入点 - 每次有错误都介入，无次数限制
           if (result.error) {
-            currentTaskPlan = await this.handleFailure(executionRecord, pageInfoAfter, currentTaskPlan);
+            const failureResult = await this.handleFailure(executionRecord, pageInfoAfter, currentTaskPlan);
+            currentTaskPlan = failureResult.taskPlan;
+            
+            // 如果监督智能体提供了下一步指令，直接使用
+            if (failureResult.nextInstruction) {
+              console.log('🔄 监督智能体提供下一步指令，直接执行...');
+              this.sendLog('🔄 监督智能体提供下一步指令，直接执行...');
+              
+              // 检查是否完成
+              if (failureResult.nextInstruction.completed) {
+                completed = true;
+                const completeLog = '🎉 任务完成！';
+                console.log(completeLog);
+                this.sendLog(completeLog);
+                break;
+              }
+              
+              // 直接执行监督智能体提供的指令
+              const executeLog = '⚡ 正在执行监督智能体提供的指令...';
+              console.log(executeLog);
+              this.sendLog(executeLog);
+              
+              const executeStartTime = performance.now();
+              const supervisorResult = await this.executionEngine.executeInstruction(failureResult.nextInstruction);
+              const executeTime = performance.now() - executeStartTime;
+              
+              // 获取指令执行后的页面状态
+              const pageInfoAfterSupervisor = await this.pageAnalyzer.getPageInfo();
+              
+              // 构建执行历史记录
+              const supervisorRecord = {
+                pageInfoBefore: pageInfoAfter,
+                instruction: failureResult.nextInstruction
+              };
+              
+              this.executionResults.push(supervisorRecord);
+              
+              const resultLog = `✅ 监督智能体指令执行完成 (${executeTime.toFixed(0)}ms)`;
+              console.log(resultLog);
+              this.sendLog(resultLog);
+              
+              if (supervisorResult.error) {
+                const errorLog = `❌ 错误: ${supervisorResult.error}`;
+                console.log(errorLog);
+                this.sendLog(errorLog);
+              }
+              if (supervisorResult.data) {
+                const dataLog = `📊 结果数据: ${JSON.stringify(supervisorResult.data).substring(0, 100)}...`;
+                console.log(dataLog);
+                this.sendLog(dataLog);
+              }
+
+              // 保存当前页面状态作为下次操作前的状态
+              previousPageInfo = pageInfoAfterSupervisor;
+              
+              // 更新当前页面信息
+              currentPageInfo = pageInfoAfterSupervisor;
+              
+              // 如果监督智能体的指令也失败了，继续循环让监督智能体再次介入
+              if (supervisorResult.error) {
+                continue; // 继续循环，让监督智能体再次介入
+              }
+            }
           }
 
           // 保存当前页面状态作为下次操作前的状态
@@ -162,7 +224,69 @@ class SmartExecutor {
           this.executionResults.push(errorRecord);
           
           // 监督智能体介入异常处理 - 每次异常都介入
-          currentTaskPlan = await this.handleFailure(errorRecord, pageInfoAfterError, currentTaskPlan);
+          const failureResult = await this.handleFailure(errorRecord, pageInfoAfterError, currentTaskPlan);
+          currentTaskPlan = failureResult.taskPlan;
+          
+          // 如果监督智能体提供了下一步指令，直接使用
+          if (failureResult.nextInstruction) {
+            console.log('🔄 监督智能体提供下一步指令，直接执行...');
+            this.sendLog('🔄 监督智能体提供下一步指令，直接执行...');
+            
+            // 检查是否完成
+            if (failureResult.nextInstruction.completed) {
+              completed = true;
+              const completeLog = '🎉 任务完成！';
+              console.log(completeLog);
+              this.sendLog(completeLog);
+              break;
+            }
+            
+            // 直接执行监督智能体提供的指令
+            const executeLog = '⚡ 正在执行监督智能体提供的指令...';
+            console.log(executeLog);
+            this.sendLog(executeLog);
+            
+            const executeStartTime = performance.now();
+            const supervisorResult = await this.executionEngine.executeInstruction(failureResult.nextInstruction);
+            const executeTime = performance.now() - executeStartTime;
+            
+            // 获取指令执行后的页面状态
+            const pageInfoAfterSupervisor = await this.pageAnalyzer.getPageInfo();
+            
+            // 构建执行历史记录
+            const supervisorRecord = {
+              pageInfoBefore: pageInfoAfterError,
+              instruction: failureResult.nextInstruction
+            };
+            
+            this.executionResults.push(supervisorRecord);
+            
+            const resultLog = `✅ 监督智能体指令执行完成 (${executeTime.toFixed(0)}ms)`;
+            console.log(resultLog);
+            this.sendLog(resultLog);
+            
+            if (supervisorResult.error) {
+              const errorLog = `❌ 错误: ${supervisorResult.error}`;
+              console.log(errorLog);
+              this.sendLog(errorLog);
+            }
+            if (supervisorResult.data) {
+              const dataLog = `📊 结果数据: ${JSON.stringify(supervisorResult.data).substring(0, 100)}...`;
+              console.log(dataLog);
+              this.sendLog(dataLog);
+            }
+
+            // 保存当前页面状态作为下次操作前的状态
+            previousPageInfo = pageInfoAfterSupervisor;
+            
+            // 更新当前页面信息
+            currentPageInfo = pageInfoAfterSupervisor;
+            
+            // 如果监督智能体的指令也失败了，继续循环让监督智能体再次介入
+            if (supervisorResult.error) {
+              continue; // 继续循环，让监督智能体再次介入
+            }
+          }
           
           // 保存当前页面状态作为下次操作前的状态
           previousPageInfo = pageInfoAfterError;
@@ -263,8 +387,8 @@ class SmartExecutor {
     console.log('🔍 执行失败，监督智能体介入分析...');
     this.sendLog('🔍 监督智能体介入分析失败原因...');
     
-    // 分析失败原因并重新规划
-    const analysisResult = await aiService.analyzeFailureAndRevise(
+    // 分析失败原因并直接提供解决方案
+    const analysisResult = await aiService.analyzeFailureAndProvideSolution(
       result, 
       currentPageInfo, 
       currentTaskPlan,
@@ -273,6 +397,7 @@ class SmartExecutor {
     
     console.log('📊 失败分析结果:', analysisResult);
     this.sendLog(`📊 失败原因: ${analysisResult.reason}`);
+    this.sendLog(`💡 解决方案: ${analysisResult.solution}`);
     
     // 如果需要重新规划，使用分析结果中的修改后的规划
     if (analysisResult.needReplan && analysisResult.revisedPlan) {
@@ -285,7 +410,19 @@ class SmartExecutor {
       this.sendLog('✅ 任务指导已修改，继续执行');
     }
     
-    return currentTaskPlan;
+    // 返回分析结果，包含下一步指令
+    return {
+      taskPlan: currentTaskPlan,
+      nextInstruction: analysisResult.action ? {
+        action: analysisResult.action,
+        description: analysisResult.description,
+        target: analysisResult.target,
+        value: analysisResult.value,
+        wait: analysisResult.wait,
+        url: analysisResult.url,
+        completed: analysisResult.completed
+      } : null
+    };
   }
 
   // 更新页面信息（统一方法）

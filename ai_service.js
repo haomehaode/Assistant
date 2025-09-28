@@ -285,9 +285,9 @@ ${JSON.stringify(pageInfo, null, 2)}
     throw new Error('缺少任务规划，无法生成执行指令');
   }
 
-  // 监督智能体：分析失败并重新规划（合并优化）
-  async analyzeFailureAndRevise(executionRecord, pageInfo, originalTaskPlan, executionResults) {
-    const system = `你是一个执行故障分析和任务规划专家。请分析执行失败的原因，并基于分析结果修改任务规划。
+  // 监督智能体：分析失败并直接给出解决方案
+  async analyzeFailureAndProvideSolution(executionRecord, pageInfo, originalTaskPlan, executionResults) {
+    const system = `你是一个执行故障分析和解决方案专家。请分析执行失败的原因，并直接提供解决方案。
 
 ## 执行错误信息：
 - 指令: ${executionRecord.instruction ? JSON.stringify(executionRecord.instruction, null, 2) : '无指令（异常）'}
@@ -306,7 +306,14 @@ ${JSON.stringify(executionResults, null, 2)}
 {
   "failureType": "元素找不到|页面变化|操作顺序|其他",
   "reason": "具体错误原因分析",
-  "suggestion": "修改建议",
+  "solution": "解决方案描述",
+  "action": "下一步动作类型",
+  "description": "动作描述",
+  "target": "CDP nodeid（纯数字字符串）",
+  "value": "输入值（仅input动作需要）",
+  "wait": "等待时间(毫秒)",
+  "url": "导航URL（仅navigate动作需要）",
+  "completed": true/false,
   "needReplan": true/false,
   "revisedPlan": {
     "name": "任务名称",
@@ -315,19 +322,28 @@ ${JSON.stringify(executionResults, null, 2)}
   }
 }
 
+## 支持的动作类型：
+- "search": 搜索（输入+回车） - 需要target和value字段，自动按回车搜索
+- "click": 点击元素 - 需要target字段
+- "input": 输入文本 - 需要target和value字段，仅输入不搜索
+- "wait": 等待 - 需要wait字段
+- "scroll_page_down": 向下滚动一页 - 无需额外参数
+- "scroll_page_up": 向上滚动一页 - 无需额外参数
+- "navigate": 导航 - 需要url字段
+- "extract": 提取信息 - 需要target字段
+
 重要说明：
 - 仔细分析页面内容，找出为什么元素找不到
 - 执行历史中包含了每次操作的页面变化信息（pageInfoBefore 和 instruction）
 - 通过对比执行历史中上一次的页面信息（pageInfoBefore）和当前页面信息，判断操作是否真的失败了
 - 分析执行历史，确定当前执行到了任务规划的哪一步
-- 可能是页面结构变化、元素位置改变、需要滚动等
-- 基于当前页面状态重新规划任务
-- 确保新的规划能够成功执行
-- 如果页面内容与预期不符，需要调整策略`;
+- 直接提供下一步的执行指令，不要只分析不行动
+- 如果需要重新规划任务，同时提供新的规划和下一步指令
+- 如果任务已完成，返回 completed: true`;
 
     const messages = [
       { role: 'system', content: system },
-      { role: 'user', content: '请分析失败原因并决定是否需要修改任务规划' }
+      { role: 'user', content: '请分析失败原因并直接提供解决方案' }
     ];
 
     try {
@@ -338,16 +354,30 @@ ${JSON.stringify(executionResults, null, 2)}
       return {
         failureType: result.failureType || 'unknown',
         reason: result.reason || '分析失败',
-        suggestion: result.suggestion || '重试当前步骤',
+        solution: result.solution || '重试当前步骤',
+        action: result.action || null,
+        description: result.description || null,
+        target: result.target || null,
+        value: result.value || null,
+        wait: result.wait || null,
+        url: result.url || null,
+        completed: result.completed || false,
         needReplan: result.needReplan || false,
         revisedPlan: result.revisedPlan || null
       };
     } catch (error) {
-      console.error('故障分析和重新规划失败:', error);
+      console.error('故障分析和解决方案生成失败:', error);
       return {
         failureType: 'unknown',
         reason: '分析失败',
-        suggestion: '重试当前步骤',
+        solution: '重试当前步骤',
+        action: null,
+        description: null,
+        target: null,
+        value: null,
+        wait: null,
+        url: null,
+        completed: false,
         needReplan: false,
         revisedPlan: null
       };
