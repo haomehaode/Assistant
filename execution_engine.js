@@ -13,7 +13,6 @@ class ExecutionEngine {
     
     const startTime = performance.now();
     let result = {
-      success: false,
       action: instruction.action,
       description: instruction.description,
       timestamp: new Date().toISOString(),
@@ -77,7 +76,6 @@ class ExecutionEngine {
           throw new Error(`不支持的动作类型: ${instruction.action}`);
       }
 
-      result.success = true;
       const successLog = `✅ ${instruction.action} 指令执行成功`;
       console.log(successLog);
       this.sendLog(successLog);
@@ -388,14 +386,14 @@ class ExecutionEngine {
   // 获取执行统计
   getExecutionStats() {
     const total = this.executionHistory.length;
-    const successful = this.executionHistory.filter(r => r.result.success).length;
-    const failed = total - successful;
+    const withErrors = this.executionHistory.filter(r => r.result.error).length;
+    const withoutErrors = total - withErrors;
     
     return {
       total: total,
-      successful: successful,
-      failed: failed,
-      successRate: total > 0 ? Math.round((successful / total) * 100) : 0
+      withoutErrors: withoutErrors,
+      withErrors: withErrors,
+      errorRate: total > 0 ? Math.round((withErrors / total) * 100) : 0
     };
   }
 

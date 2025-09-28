@@ -184,98 +184,40 @@ class AIService {
   }
 
   // 获取执行指令
-  async getExecutionInstructions(pageInfo, taskOutline, previousResults = [], originalTaskPlan = null) {
-    // 如果是web_content_tasks数组，按照顺序执行
-    if (Array.isArray(taskOutline)) {
-      const currentStep = previousResults.length;
-      const totalSteps = taskOutline.length;
+  async getExecutionInstructions(pageInfo, previousResults = [], originalTaskPlan = null) {
+    // 从原始任务规划中提取web_content_tasks
+    if (originalTaskPlan && originalTaskPlan.sub_tasks && originalTaskPlan.sub_tasks.length > 0) {
+      const webContentTasks = originalTaskPlan.sub_tasks[0].web_content_tasks || [];
       
-      if (currentStep >= totalSteps) {
-        // 检查是否有失败的任务需要重试
-        const hasFailedTasks = previousResults.some(result => !result.success);
-        if (hasFailedTasks) {
-          // 如果有失败的任务，继续重试
-          const currentTask = taskOutline[currentStep - 1]; // 重试最后一个任务
-          console.log(`🔄 重试失败的任务: ${currentTask}`);
-          const instruction = await this.parseTaskToInstruction(currentTask, pageInfo, previousResults, originalTaskPlan, taskOutline);
-          instruction.step = currentStep;
-          instruction.totalSteps = totalSteps;
-          instruction.retry = true;
-          return instruction;
-        }
-        
-        // 让AI基于页面内容判断任务是否真正完成
-        console.log(`📋 所有步骤已执行完成，让AI判断任务是否真正完成`);
-        const completionCheck = await this.checkTaskCompletion(pageInfo, taskOutline, previousResults, originalTaskPlan);
-        return completionCheck;
-      }
-      
-      const currentTask = taskOutline[currentStep];
-      console.log(`📋 执行第 ${currentStep + 1}/${totalSteps} 个任务: ${currentTask}`);
-      
-      // 根据任务描述生成具体指令，传递完整的任务列表
-      const instruction = await this.parseTaskToInstruction(currentTask, pageInfo, previousResults, originalTaskPlan, taskOutline);
-      instruction.step = currentStep + 1;
-      instruction.totalSteps = totalSteps;
-      
-      return instruction;
-    }
-    
-    // 如果不是web_content_tasks数组，抛出错误
-    throw new Error('不支持的任务格式，请使用web_content_tasks数组');
-  }
+      const systemPrompt = `你是一个智能执行器。请根据当前页面状态和执行历史，决定下一步要做什么。
 
-  // 解析任务描述为具体指令
-  async parseTaskToInstruction(taskDescription, pageInfo, previousResults = [], originalTaskPlan = null, allTasks = []) {
-    // 构建对话历史
-    const conversationHistory = this.buildConversationHistory(previousResults);
-    
-    // 构建完整的任务上下文信息
-    const currentStep = previousResults.length + 1;
-    const totalSteps = allTasks.length;
-    const completedTasks = previousResults.filter(r => r.success).length;
-    const remainingTasks = allTasks.slice(currentStep - 1);
-    
-    // 构建原始任务规划信息
-    const originalPlanInfo = originalTaskPlan ? `
-## 原始任务规划（总方向指导）：
+## 任务规划（包含web_content_tasks）：
 ${JSON.stringify(originalTaskPlan, null, 2)}
 
-## 任务规划说明：
-- 这是用户原始任务的完整规划，包含总体目标和子任务结构
-- 当前执行的web_content_tasks是其中一个子任务的页面操作部分
-- 请参考原始规划来理解当前步骤在整个任务中的位置和意义
-- 如果当前步骤失败，请基于原始规划的目标来调整执行策略` : '';
-
-    const systemPrompt = `你是一个智能网页操作指令解析器。根据任务描述和CDP格式的页面信息，生成具体的执行指令。
-
-## 完整任务列表（web_content_tasks）：
-${JSON.stringify(allTasks, null, 2)}
-
-## 当前执行进度：
-- 当前步骤：${currentStep}/${totalSteps}
-- 已完成步骤：${completedTasks}
-- 当前任务：${taskDescription}
-- 剩余任务：${JSON.stringify(remainingTasks, null, 2)}
-
-## 任务描述：
-${taskDescription}
-
-${originalPlanInfo}
+## 执行历史（包含页面变化）：
+${JSON.stringify(previousResults, null, 2)}
 
 ## 当前页面信息（仅可视区域）：
 ${JSON.stringify(pageInfo, null, 2)}
-
-## 之前的执行结果：
-${JSON.stringify(previousResults.slice(-3), null, 2)}
 
 ## 重要说明：
 - 当前提供的页面信息仅包含可视区域内的元素
 - 如果找不到需要的元素，可以请求滚动页面来查看更多内容
 - 页面信息包含viewport信息，显示当前滚动位置和可滚动范围
-- 你有完整的任务列表，可以理解当前步骤在整个任务中的位置和作用
-- 可以根据后续任务来调整当前步骤的执行策略
-- 如果提供了原始任务规划，请参考其总体目标来指导当前步骤的执行
+- 执行历史中包含了每次操作的页面变化信息（pageInfoBefore 和 instruction）
+- 请通过对比执行历史中上一次的页面信息（pageInfoBefore）和当前页面信息，判断上次指令是否成功
+- 分析执行历史，确定当前执行到了任务规划的哪一步
+- 判断标准：
+  * 如果页面URL、标题、内容有明显变化，说明上次指令成功
+  * 如果页面没有变化，说明上次指令失败，需要重新尝试
+- 示例：
+  * 点击搜索按钮成功：URL从 "https://www.baidu.com" 变为 "https://www.baidu.com/s?wd=关键词"
+  * 输入文本成功：输入框的value值发生变化
+  * 滚动成功：viewport的scrollY值发生变化
+  * 导航成功：URL完全改变
+- 只有上次指令成功，才能规划下一步指令
+- 如果上次指令失败，需要重新尝试或调整策略
+- 如果任务已完成，返回 completed: true
 
 ## 执行指令格式：
 {
@@ -284,7 +226,8 @@ ${JSON.stringify(previousResults.slice(-3), null, 2)}
   "target": "CDP nodeid（纯数字字符串）",
   "value": "输入值（仅input动作需要）",
   "wait": "等待时间(毫秒)",
-  "url": "导航URL（仅navigate动作需要）"
+  "url": "导航URL（仅navigate动作需要）",
+  "completed": true/false
 }
 
 ## 支持的动作类型：
@@ -297,17 +240,9 @@ ${JSON.stringify(previousResults.slice(-3), null, 2)}
 - "navigate": 导航 - 需要url字段
 - "extract": 提取信息 - 需要target字段
 
-## 搜索操作策略：
-- 对于搜索框，优先使用 "search" 动作，它会自动输入内容并按回车搜索
-- 避免使用 "input" + "click" 的组合来搜索，直接使用 "search" 即可
-- "search" 动作包含了输入和回车两个步骤，更符合用户习惯
-
 ## 滚动策略：
 - 如果当前可视区域没有找到目标元素，必须使用scroll_page_down向下滚动一页
-- scroll_page_down使用Page Down键滚动，正好滚动一个视口的高度，确保精确的页面切换
 - 如果需要返回查看之前的内容，使用scroll_page_up向上滚动一页
-- scroll_page_up使用Page Up键滚动，更符合用户习惯
-- 禁止使用其他滚动方式，只能使用scroll_page_down和scroll_page_up
 - 滚动后系统会自动更新页面信息，包含新可视区域的内容
 
 ## CDP分析要求：
@@ -323,133 +258,98 @@ ${JSON.stringify(previousResults.slice(-3), null, 2)}
 - 优先使用click、input等基础动作
 - 如果找不到目标元素，优先尝试滚动而不是放弃
 
-## 注意事项：
-- 根据任务描述确定动作类型
-- 从CDP DOM树中找到正确的元素nodeid
-- 确保指令具体可执行
-- 如果任务已完成，返回completed: true
-- 考虑当前步骤在整个任务流程中的作用，为后续步骤做准备`;
+请分析当前状态并决定下一步操作：`;
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory,
-      { role: 'user', content: `请解析任务: ${taskDescription}
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: '请分析当前状态并决定下一步操作' }
+      ];
 
-当前进度：${currentStep}/${totalSteps}
-剩余任务：${remainingTasks.length} 个
-
-重要提示：
-1. 从CDP DOM树中找到合适的元素，使用其nodeId字段
-2. 必须使用CDP nodeid作为target，格式为纯数字字符串
-3. 确保nodeid对应可见且可操作的元素
-4. 分析页面文本内容，理解页面功能和可操作区域
-5. 禁止使用CSS选择器（如document.querySelector）
-6. 优先使用click、input等基础动作
-7. 考虑当前步骤在整个任务流程中的作用` }
-    ];
-
-    try {
-      const response = await this.callAI(messages);
-      const parsed = this.parseJSONResponse(response);
-      
-      // 验证必要字段
-      if (!parsed.action) {
-        throw new Error('响应中缺少action字段');
+      try {
+        const response = await this.callAI(messages);
+        const instruction = this.parseJSONResponse(response);
+        
+        // 验证必要字段
+        if (!instruction.action && !instruction.completed) {
+          throw new Error('响应中缺少action字段或completed字段');
+        }
+        
+        return instruction;
+      } catch (error) {
+        console.error('获取执行指令失败:', error);
+        throw new Error(`获取执行指令失败: ${error.message}`);
       }
-      
-      return parsed;
-    } catch (error) {
-      console.error('解析任务指令失败:', error);
-      throw new Error(`解析任务指令失败: ${error.message}`);
     }
+    
+    // 如果没有任务规划，抛出错误
+    throw new Error('缺少任务规划，无法生成执行指令');
   }
 
-  // 检查任务是否真正完成
-  async checkTaskCompletion(pageInfo, taskOutline, previousResults, originalTaskPlan) {
-    const currentStep = previousResults.length;
-    const totalSteps = taskOutline.length;
-    const completedTasks = previousResults.filter(r => r.success).length;
-    const remainingTasks = taskOutline.slice(currentStep);
-    
-    // 构建原始任务规划信息
-    const originalPlanInfo = originalTaskPlan ? `
-## 原始任务规划（总目标参考）：
-${JSON.stringify(originalTaskPlan, null, 2)}
+  // 监督智能体：分析失败并重新规划（合并优化）
+  async analyzeFailureAndRevise(executionRecord, pageInfo, originalTaskPlan, executionResults) {
+    const system = `你是一个执行故障分析和任务规划专家。请分析执行失败的原因，并基于分析结果修改任务规划。
 
-## 任务规划说明：
-- 这是用户原始任务的完整规划，包含总体目标和子任务结构
-- 当前执行的web_content_tasks是其中一个子任务的页面操作部分
-- 请参考原始规划来判断当前子任务是否真正完成
-- 考虑当前子任务的完成是否有助于实现总体目标` : '';
+## 执行错误信息：
+- 指令: ${executionRecord.instruction ? JSON.stringify(executionRecord.instruction, null, 2) : '无指令（异常）'}
+- 操作前页面: ${executionRecord.pageInfoBefore ? '已提供' : '无'}
 
-    const systemPrompt = `你是一个任务完成检查专家。请基于当前页面内容和任务要求，判断任务是否真正完成。
-
-## 完整任务列表（web_content_tasks）：
-${JSON.stringify(taskOutline, null, 2)}
-
-## 当前执行进度：
-- 当前步骤：${currentStep}/${totalSteps}
-- 已完成步骤：${completedTasks}
-- 剩余任务：${JSON.stringify(remainingTasks, null, 2)}
-
-${originalPlanInfo}
-
-## 当前页面信息：
+## 当前页面内容（完整信息）：
 ${JSON.stringify(pageInfo, null, 2)}
 
-## 执行历史：
-${JSON.stringify(previousResults.slice(-3), null, 2)}
+## 原始任务规划：
+${JSON.stringify(originalTaskPlan, null, 2)}
 
-## 判断标准：
-1. 检查是否完成了所有必要的操作步骤
-2. 检查页面是否显示了预期的结果内容
-3. 检查是否已经获取到足够的信息来满足任务目标
-4. 考虑剩余任务是否还需要执行
-5. 如果提供了原始任务规划，请参考其总体目标来判断当前子任务是否完成
+## 执行历史（包含页面变化）：
+${JSON.stringify(executionResults, null, 2)}
 
-## 输出格式：
+请分析错误原因并输出JSON格式：
 {
-  "completed": true/false,
-  "description": "任务完成情况描述",
-  "reason": "完成或未完成的原因"
+  "failureType": "元素找不到|页面变化|操作顺序|其他",
+  "reason": "具体错误原因分析",
+  "suggestion": "修改建议",
+  "needReplan": true/false,
+  "revisedPlan": {
+    "name": "任务名称",
+    "description": "任务详细描述", 
+    "sub_tasks": [...]
+  }
 }
 
-如果任务已完成，返回 completed: true；如果还需要继续操作，返回 completed: false 并说明原因。`;
+重要说明：
+- 仔细分析页面内容，找出为什么元素找不到
+- 执行历史中包含了每次操作的页面变化信息（pageInfoBefore 和 instruction）
+- 通过对比执行历史中上一次的页面信息（pageInfoBefore）和当前页面信息，判断操作是否真的失败了
+- 分析执行历史，确定当前执行到了任务规划的哪一步
+- 可能是页面结构变化、元素位置改变、需要滚动等
+- 基于当前页面状态重新规划任务
+- 确保新的规划能够成功执行
+- 如果页面内容与预期不符，需要调整策略`;
 
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `请检查任务是否真正完成
-
-当前进度：${currentStep}/${totalSteps}
-剩余任务：${remainingTasks.length} 个` }
+      { role: 'system', content: system },
+      { role: 'user', content: '请分析失败原因并决定是否需要修改任务规划' }
     ];
 
     try {
       const response = await this.callAI(messages);
-      const parsed = this.parseJSONResponse(response);
+      const result = this.parseJSONResponse(response);
       
-      if (parsed.completed) {
-        return {
-          action: 'completed',
-          description: parsed.description || '任务已完成',
-          completed: true
-        };
-      } else {
-        // 如果任务未完成，让AI生成下一步操作
-        const nextTask = taskOutline[taskOutline.length - 1]; // 继续执行最后一个任务
-        const instruction = await this.parseTaskToInstruction(nextTask, pageInfo, previousResults, originalTaskPlan, taskOutline);
-        instruction.step = previousResults.length + 1;
-        instruction.totalSteps = taskOutline.length;
-        instruction.retry = true;
-        return instruction;
-      }
-    } catch (error) {
-      console.error('任务完成检查失败:', error);
-      // 如果检查失败，默认认为任务已完成
+      // 确保返回格式正确
       return {
-        action: 'completed',
-        description: '任务已完成（检查失败）',
-        completed: true
+        failureType: result.failureType || 'unknown',
+        reason: result.reason || '分析失败',
+        suggestion: result.suggestion || '重试当前步骤',
+        needReplan: result.needReplan || false,
+        revisedPlan: result.revisedPlan || null
+      };
+    } catch (error) {
+      console.error('故障分析和重新规划失败:', error);
+      return {
+        failureType: 'unknown',
+        reason: '分析失败',
+        suggestion: '重试当前步骤',
+        needReplan: false,
+        revisedPlan: null
       };
     }
   }
