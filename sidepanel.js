@@ -156,7 +156,38 @@ document.getElementById('btn-go').addEventListener('click', async () => {
     appendLocal(JSON.stringify(intent, null, 2));
     log('FLOW', `结束 识别意图 用时 ${(t1 - t0).toFixed(0)}ms`);
     const needBrowser = Array.isArray(intent.task_types) && intent.task_types.includes('browser_use');
-    if (!needBrowser) { elStatus.textContent = '该任务无需浏览器自动化'; log('FLOW', '流程结束：无需浏览器自动化'); return; }
+    if (!needBrowser) { 
+      // 获取任务类型，用于选择相应的AI回答方法
+      const taskTypes = intent.task_types || [];
+      const taskTypeNames = {
+        'general': '普通问答',
+        'analysis': '分析归纳',
+        'code': '代码生成',
+        'image': '图像处理',
+        'translation': '翻译润色',
+        'other': '其他类型'
+      };
+      
+      const primaryTaskType = taskTypes.length > 0 ? taskTypes[0] : 'general';
+      const taskTypeName = taskTypeNames[primaryTaskType] || '普通问答';
+      
+      elStatus.textContent = `该任务无需浏览器自动化，使用AI进行${taskTypeName}回答`;
+      log('FLOW', `开始 使用AI进行${taskTypeName}回答`);
+      log('INFO', `识别到的任务类型: ${taskTypes.join(', ')}`);
+      
+      try {
+        const t2 = performance.now();
+        const aiResponse = await aiService.answerUserQuestion(prompt, taskTypes);
+        const t3 = performance.now();
+        appendLocal(aiResponse);
+        log('FLOW', `AI ${taskTypeName}回答完成 用时 ${(t3 - t2).toFixed(0)}ms`);
+        elStatus.textContent = `AI ${taskTypeName}回答完成`;  
+      } catch (error) {
+        log('ERROR', `AI ${taskTypeName}回答失败: ${error.message}`);
+        elStatus.textContent = `AI ${taskTypeName}回答失败`;
+      }
+      return; 
+    }
     log('FLOW', '开始 生成计划');
     elStatus.textContent = '生成计划中...';
     const t2 = performance.now();

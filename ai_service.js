@@ -454,6 +454,176 @@ ${JSON.stringify(previousResults.slice(-3), null, 2)}
     }
   }
 
+  // 根据任务类型回答用户问题
+  async answerUserQuestion(question, taskTypes = []) {
+    // 根据任务类型选择相应的回答方法
+    if (taskTypes.includes('code')) {
+      return await this.answerCodeQuestion(question);
+    } else if (taskTypes.includes('analysis')) {
+      return await this.answerAnalysisQuestion(question);
+    } else if (taskTypes.includes('image')) {
+      return await this.answerImageQuestion(question);
+    } else if (taskTypes.includes('translation')) {
+      return await this.answerTranslationQuestion(question);
+    } else {
+      return await this.answerGeneralQuestion(question);
+    }
+  }
+
+  // 普通问答/解释
+  async answerGeneralQuestion(question) {
+    const system = `你是一个智能助手，能够回答各种问题。请根据用户的问题提供准确、有用、详细的回答。
+
+回答要求：
+- 提供准确、有用的信息
+- 回答要详细但不过于冗长
+- 如果涉及专业领域，请提供专业且易懂的解释
+- 如果问题需要最新信息，请说明你的知识截止时间
+- 如果无法确定答案，请诚实说明并提供可能的解决方向
+
+请用中文回答用户的问题。`;
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: question }
+    ];
+
+    try {
+      const response = await this.callAI(messages, {
+        temperature: 0.7,
+        max_tokens: 2048
+      });
+      return response;
+    } catch (error) {
+      console.error('回答普通问题失败:', error);
+      throw new Error(`回答失败: ${error.message}`);
+    }
+  }
+
+  // 代码生成/编程问题
+  async answerCodeQuestion(question) {
+    const system = `你是一个专业的编程助手，擅长各种编程语言和技术栈。请根据用户的问题提供准确的代码解决方案。
+
+回答要求：
+- 提供完整、可运行的代码示例
+- 包含必要的注释和说明
+- 解释代码的工作原理
+- 如果涉及多种语言，优先使用最合适的语言
+- 提供最佳实践和注意事项
+- 如果代码较长，提供分步骤的说明
+
+请用中文回答，代码部分保持原语言。`;
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: question }
+    ];
+
+    try {
+      const response = await this.callAI(messages, {
+        temperature: 0.3,
+        max_tokens: 3072
+      });
+      return response;
+    } catch (error) {
+      console.error('回答代码问题失败:', error);
+      throw new Error(`代码回答失败: ${error.message}`);
+    }
+  }
+
+  // 分析/归纳/对比/评估问题
+  async answerAnalysisQuestion(question) {
+    const system = `你是一个专业的分析专家，擅长归纳、对比、评估和做结论。请根据用户的问题提供深入的分析和见解。
+
+回答要求：
+- 提供结构化的分析框架
+- 从多个角度进行分析
+- 提供数据支撑和逻辑推理
+- 给出明确的结论和建议
+- 如果涉及对比，提供详细的对比分析
+- 如果涉及评估，提供客观的评估标准
+
+请用中文回答，保持专业性和客观性。`;
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: question }
+    ];
+
+    try {
+      const response = await this.callAI(messages, {
+        temperature: 0.5,
+        max_tokens: 2560
+      });
+      return response;
+    } catch (error) {
+      console.error('回答分析问题失败:', error);
+      throw new Error(`分析回答失败: ${error.message}`);
+    }
+  }
+
+  // 图像/图片生成问题
+  async answerImageQuestion(question) {
+    const system = `你是一个专业的图像处理助手，擅长图像生成、编辑和设计。请根据用户的问题提供专业的图像相关建议。
+
+回答要求：
+- 提供详细的图像生成或处理建议
+- 描述图像的具体特征和要求
+- 推荐合适的工具和技术
+- 提供实现步骤和注意事项
+- 如果涉及AI图像生成，提供详细的提示词建议
+- 考虑图像的质量、风格、尺寸等技术细节
+
+请用中文回答，提供实用的建议。`;
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: question }
+    ];
+
+    try {
+      const response = await this.callAI(messages, {
+        temperature: 0.6,
+        max_tokens: 2048
+      });
+      return response;
+    } catch (error) {
+      console.error('回答图像问题失败:', error);
+      throw new Error(`图像回答失败: ${error.message}`);
+    }
+  }
+
+  // 翻译/润色问题
+  async answerTranslationQuestion(question) {
+    const system = `你是一个专业的翻译和语言润色专家，擅长多语言翻译和文本润色。请根据用户的问题提供准确的翻译或润色建议。
+
+回答要求：
+- 提供准确的翻译结果
+- 保持原文的语气和风格
+- 考虑文化背景和语境
+- 如果是润色，提供改进建议
+- 提供多种表达方式供选择
+- 解释翻译或润色的理由
+
+请用中文回答，翻译结果保持原语言。`;
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: question }
+    ];
+
+    try {
+      const response = await this.callAI(messages, {
+        temperature: 0.4,
+        max_tokens: 2048
+      });
+      return response;
+    } catch (error) {
+      console.error('回答翻译问题失败:', error);
+      throw new Error(`翻译回答失败: ${error.message}`);
+    }
+  }
+
   // 构建对话历史
   buildConversationHistory(previousResults) {
     const history = [];
