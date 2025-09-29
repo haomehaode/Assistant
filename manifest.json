@@ -15,7 +15,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -36,7 +37,6 @@
       "js": [
         "config.js",
         "ai_service.js",
-        "page_analyzer.js",
         "execution_engine.js",
         "smart_executor.js",
         "content.js"

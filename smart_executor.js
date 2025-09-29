@@ -1,13 +1,11 @@
 // 智能执行器：整合页面分析、AI交互和执行引擎
 class SmartExecutor {
   constructor() {
-    this.pageAnalyzer = new PageAnalyzer();
     this.executionEngine = new ExecutionEngine();
     this.isRunning = false;
     this.currentTask = null;
     this.executionResults = [];
     this.shouldStop = false; // 添加停止标志
-    // 移除 maxIterations 和 maxSupervisions 限制
   }
 
   // 初始化
@@ -30,11 +28,9 @@ class SmartExecutor {
     try {
       console.log('开始执行智能任务:', taskOutline);
       
-      // AI配置已修复，直接使用AI执行
-      
       // 获取初始页面信息（此时页面已经打开）
       console.log('🔍 获取页面信息用于智能执行...');
-      const pageInfo = await this.pageAnalyzer.getPageInfo();
+      const pageInfo = await this.getPageInfoFromBackground();
       console.log('✅ 页面信息获取完成:', pageInfo);
 
       let iteration = 0;
@@ -113,7 +109,7 @@ class SmartExecutor {
           const executeTime = performance.now() - executeStartTime;
           
           // 获取指令执行后的页面状态
-          const pageInfoAfter = await this.pageAnalyzer.getPageInfo();
+          const pageInfoAfter = await this.getPageInfoFromBackground();
           
           // 构建执行历史记录
           const executionRecord = {
@@ -140,6 +136,7 @@ class SmartExecutor {
 
           // 监督智能体介入点 - 每次有错误都介入，无次数限制
           if (result.error) {
+            break;
             const failureResult = await this.handleFailure(executionRecord, pageInfoAfter, currentTaskPlan);
             currentTaskPlan = failureResult.taskPlan;
             
@@ -167,7 +164,7 @@ class SmartExecutor {
               const executeTime = performance.now() - executeStartTime;
               
               // 获取指令执行后的页面状态
-              const pageInfoAfterSupervisor = await this.pageAnalyzer.getPageInfo();
+              const pageInfoAfterSupervisor = await this.getPageInfoFromBackground();
               
               // 构建执行历史记录
               const supervisorRecord = {
@@ -224,7 +221,7 @@ class SmartExecutor {
           this.sendLog(errorLog);
           
           // 获取异常发生后的页面状态
-          const pageInfoAfterError = await this.pageAnalyzer.getPageInfo();
+          const pageInfoAfterError = await this.getPageInfoFromBackground();
           
           // 记录错误结果
           const errorRecord = {
@@ -447,7 +444,7 @@ class SmartExecutor {
     this.sendLog(pageLog);
     
     const pageStartTime = performance.now();
-    const pageInfo = await this.pageAnalyzer.getPageInfo();
+    const pageInfo = await this.getPageInfoFromBackground();
     const pageTime = performance.now() - pageStartTime;
     
     const pageResultLog = `✅ 页面信息更新完成 (${pageTime.toFixed(0)}ms)`;
@@ -458,6 +455,23 @@ class SmartExecutor {
     await this.wait(500);
     
     return pageInfo;
+  }
+
+  // 通过 background 获取页面信息
+  async getPageInfoFromBackground() {
+    return await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: 'GET_PAGE_INFO' }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response && response.ok && response.pageInfo) {
+          resolve(response.pageInfo);
+        } else if (response && response.error) {
+          reject(new Error(response.error));
+        } else {
+          reject(new Error('获取页面信息失败'));
+        }
+      });
+    });
   }
 
 

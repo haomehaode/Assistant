@@ -32,10 +32,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 异步响应
   }
   
+  if (msg && msg.type === 'GET_PAGE_INFO') {
+    console.log('获取页面信息');
+    getPageInfo(sender)
+      .then((info) => {
+        console.log('页面信息获取成功');
+        sendResponse({ ok: true, pageInfo: info });
+      })
+      .catch((e) => {
+        console.error('页面信息获取失败:', e);
+        sendResponse({ ok: false, error: String(e) });
+      });
+    return true; // 异步响应
+  }
+
+  if (msg && msg.type === 'EXECUTE_ACTION') {
+    console.log('执行页面动作(经CDP):', msg.action);
+    executeActionViaCDP(sender, msg)
+      .then((r) => sendResponse({ ok: true, data: r }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  
   
   sendResponse({ ok: false, error: '未知消息类型' });
   return true;
 });
+
+async function getActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true});
+  return tabs && tabs[0];
+}
 
 async function executeBrowserTask(task, sender) {
   const browserTask = task && task.browser_task;
@@ -72,24 +99,6 @@ async function executeBrowserTask(task, sender) {
         throw new Error('不支持的浏览器任务: ' + tool_name);
     }
   }
-}
-
-function normalizeBrowserTask(text) {
-  if (typeof text !== 'string') return { action: '', params: {} };
-  const m = text.match(/^(\S+)(?:\s+(.+))?$/);
-  const action = (m && m[1]) || '';
-  const paramText = (m && m[2]) || '';
-  const params = {};
-  if (paramText.includes('url=')) {
-    const pm = paramText.match(/url=([^\s]+)/);
-    if (pm) params.url = pm[1];
-  }
-  return { action, params };
-}
-
-async function getActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true});
-  return tabs && tabs[0];
 }
 
 // 执行智能任务
@@ -157,6 +166,242 @@ async function executeSmartTask(taskOutline, options, sender, originalTaskPlan =
   } catch (error) {
     console.error('执行智能任务失败:', error);
     throw error;
+  }
+}
+
+// 汇总页面信息（URL、标题、时间戳、viewport、DOM）
+async function getPageInfo(sender) {
+  const tab = (sender && sender.tab) || (await getActiveTab());
+  if (!tab || !tab.id) {
+    throw new Error('无法获取当前标签页');
+  }
+
+  await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+  try {
+    // 启用所需的调试域
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.enable');
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.enable');
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.enable');
+    // 1) viewport
+    const metrics = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.getLayoutMetrics');
+    const v = metrics && metrics.layoutViewport ? metrics.layoutViewport : { clientWidth: 0, clientHeight: 0, pageX: 0, pageY: 0 };
+    const viewport = {
+      width: v.clientWidth || 0,
+      height: v.clientHeight || 0,
+      scrollX: v.pageX || 0,
+      scrollY: v.pageY || 0,
+      scrollMaxX: 0,
+      scrollMaxY: 0
+    };
+
+    // 2) 获取扁平DOM并仅保留可视范围内的“可操作/有信息”节点
+    const flat = await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.getFlattenedDocument', { depth: -1, pierce: true });
+    const bodyNode = flat.nodes.find(n => n.nodeName && n.nodeName.toLowerCase() === 'body');
+    if (!bodyNode) throw new Error('未找到body节点');
+
+    const nodeMap = new Map(flat.nodes.map(n => [n.nodeId, n]));
+    const childrenByParent = new Map();
+    for (const n of flat.nodes) {
+      if (n.parentId != null) {
+        if (!childrenByParent.has(n.parentId)) childrenByParent.set(n.parentId, []);
+        childrenByParent.get(n.parentId).push(n.nodeId);
+      }
+    }
+
+    const attrWhitelist = new Set(['id','class','name','role','aria-label','title','type','value','placeholder','checked','disabled','readonly','href','src','alt','contenteditable','tabindex']);
+    const actionableTags = new Set(['input','textarea','select','button','a','form','label']);
+    const semanticTags = new Set(['h1','h2','h3','h4','h5','h6','ul','ol','li','table','tr','td','th','summary','details']);
+
+    const isActionable = (name, attrs) => {
+      if (actionableTags.has(name)) return true;
+      if (semanticTags.has(name)) return true;
+      if (!attrs) return false;
+      return Boolean(attrs.href || attrs.placeholder || attrs.type || attrs.role || attrs.value);
+    };
+
+    const pickAttrs = (node) => {
+      const out = {};
+      if (!node.attributes) return out;
+      for (let i = 0; i < node.attributes.length; i += 2) {
+        const k = node.attributes[i];
+        const val = node.attributes[i+1];
+        if (attrWhitelist.has(k)) out[k] = val;
+      }
+      return out;
+    };
+
+    const isVisibleInViewport = async (backendNodeId) => {
+      try {
+        const box = await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.getBoxModel', { backendNodeId });
+        const q = box && box.model && box.model.content || [];
+        if (q.length < 8) return false;
+        const minX = Math.min(q[0], q[2], q[4], q[6]);
+        const maxX = Math.max(q[0], q[2], q[4], q[6]);
+        const minY = Math.min(q[1], q[3], q[5], q[7]);
+        const maxY = Math.max(q[1], q[3], q[5], q[7]);
+        if ((maxX - minX) <= 0 || (maxY - minY) <= 0) return false;
+        // 与viewport相交
+        return !(maxX < 0 || maxY < 0 || minX > viewport.width || minY > viewport.height);
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const getInnerText = async (backendNodeId) => {
+      try {
+        const resolved = await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.resolveNode', { backendNodeId });
+        const objectId = resolved && resolved.object && resolved.object.objectId;
+        if (!objectId) return '';
+        const { result } = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.callFunctionOn', {
+          objectId,
+          functionDeclaration: function() { return (this && this.innerText) ? this.innerText.trim() : (this && this.textContent ? this.textContent.trim() : ''); }.toString(),
+          returnByValue: true
+        });
+        const text = (result && result.value) || '';
+        return text.length > 200 ? text.slice(0, 200) : text;
+      } catch (_) {
+        return '';
+      }
+    };
+
+    const buildFilteredTree = async (node, isRoot = false) => {
+      if (!node || node.nodeType !== 1) return null; // 仅元素
+      const name = (node.nodeName || '').toLowerCase();
+      const backendNodeId = (node.backendNodeId !== undefined ? node.backendNodeId : node.nodeId);
+      const attrs = pickAttrs(node);
+      const actionable = isActionable(name, attrs);
+
+      // 根节点(body)始终保留并遍历其子；其它节点需可见
+      let visible = true;
+      if (!isRoot) {
+        visible = await isVisibleInViewport(backendNodeId);
+        if (!visible) return null;
+      }
+
+      const out = {
+        nodeId: backendNodeId,
+        nodeName: name,
+        attributes: {},
+        children: []
+      };
+      if (actionable) out.attributes = attrs;
+
+      if (actionable || semanticTags.has(name) || ['p','span','div','li','a','button','label'].includes(name)) {
+        const txt = await getInnerText(backendNodeId);
+        if (txt) out.text = txt;
+      }
+
+      const childIds = childrenByParent.get(node.nodeId) || [];
+      for (const cid of childIds) {
+        const child = nodeMap.get(cid);
+        const built = await buildFilteredTree(child, false);
+        if (built) out.children.push(built);
+      }
+
+      if (!isRoot && !out.text && out.children.length === 0 && !actionable) return null;
+      return out;
+    };
+
+    const dom = await buildFilteredTree(bodyNode, true);
+
+    return {
+      url: tab.url || '',
+      title: tab.title || '',
+      timestamp: new Date().toISOString(),
+      viewport,
+      dom
+    };
+  } finally {
+    await chrome.debugger.detach({ tabId: tab.id });
+  }
+}
+
+// 使用 CDP 执行动作（所有操作基于真实 nodeId）
+async function executeActionViaCDP(sender, payload) {
+  const tab = (sender && sender.tab) || (await getActiveTab());
+  if (!tab || !tab.id) throw new Error('无法获取当前标签页');
+
+  const { action, target, value, url, wait } = payload || {};
+  await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+  try {
+    // 启用所需的调试域
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.enable');
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.enable');
+    await chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.enable');
+    switch (action) {
+      case 'navigate': {
+        if (!url) throw new Error('缺少导航URL');
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.navigate', { url });
+        return { action, url };
+      }
+      case 'wait': {
+        const ms = wait || 1000;
+        await new Promise(r => setTimeout(r, ms));
+        return { action, wait: ms };
+      }
+      case 'click': {
+        if (!target) throw new Error('缺少目标元素nodeid');
+        const backendNodeId = Number(target);
+        if (!backendNodeId) throw new Error('目标nodeId无效');
+        // 调用 DOM.scrollIntoViewIfNeeded
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
+        // 取 box 模型中心点
+        const box = await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.getBoxModel', { backendNodeId });
+        const quad = box && box.model && box.model.content || [];
+        if (quad.length < 8) throw new Error('无法获取元素位置');
+        const x = Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4);
+        const y = Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4);
+        // 发送输入事件
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+        return { action, target };
+      }
+      case 'input':
+      case 'search': {
+        if (!target) throw new Error('缺少目标元素nodeid');
+        const text = value || '';
+        const backendNodeId = Number(target);
+        if (!backendNodeId) throw new Error('目标nodeId无效');
+        // 聚焦元素
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.focus', { backendNodeId });
+        // 选中并清空
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Control' });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'a' });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'a' });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control' });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.insertText', { text });
+        if (action === 'search') {
+          await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter' });
+          await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter' });
+        }
+        return { action, target, value: text };
+      }
+      case 'scroll_page_down':
+      case 'scroll_page_up': {
+        const key = action === 'scroll_page_down' ? 'PageDown' : 'PageUp';
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyDown', key });
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Input.dispatchKeyEvent', { type: 'keyUp', key });
+        return { action };
+      }
+      case 'extract': {
+        if (!target) throw new Error('缺少目标元素nodeid');
+        const backendNodeId = Number(target);
+        if (!backendNodeId) throw new Error('目标nodeId无效');
+        const evalResult = await chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.resolveNode', { backendNodeId });
+        const objectId = evalResult && evalResult.object && evalResult.object.objectId;
+        if (!objectId) throw new Error('无法解析目标节点对象');
+        const { result } = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.callFunctionOn', {
+          objectId,
+          functionDeclaration: function() { return this && (this.value !== undefined ? this.value : this.textContent) || ''; }.toString(),
+          returnByValue: true
+        });
+        return { action, target, data: (result && result.value) || '' };
+      }
+      default:
+        throw new Error('不支持的动作: ' + action);
+    }
+  } finally {
+    await chrome.debugger.detach({ tabId: tab.id });
   }
 }
 

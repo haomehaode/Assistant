@@ -189,7 +189,7 @@ class AIService {
     if (originalTaskPlan && originalTaskPlan.sub_tasks && originalTaskPlan.sub_tasks.length > 0) {
       const webContentTasks = originalTaskPlan.sub_tasks[0].web_content_tasks || [];
       
-      const systemPrompt = `你是一个智能执行器。请根据当前页面状态和执行历史，决定下一步要做什么。
+      const system = `你是一个智能执行器。请根据当前页面状态和执行历史，决定下一步要做什么。
 
 ## 用户原始任务描述：
 ${originalTaskDescription || '未提供原始任务描述'}
@@ -264,11 +264,12 @@ ${JSON.stringify(pageInfo, null, 2)}
 请分析当前状态并决定下一步操作：`;
 
       const messages = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: system },
         { role: 'user', content: '请分析当前状态并决定下一步操作' }
       ];
 
       try {
+        console.log('获取执行指令提示词', system);
         const response = await this.callAI(messages);
         const instruction = this.parseJSONResponse(response);
         
@@ -353,6 +354,7 @@ ${JSON.stringify(executionResults, null, 2)}
     ];
 
     try {
+      console.log('分析失败和解决方案提示词', system);
       const response = await this.callAI(messages);
       const result = this.parseJSONResponse(response);
       
