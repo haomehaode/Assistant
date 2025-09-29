@@ -164,7 +164,7 @@ class SmartExecutor {
               const executeTime = performance.now() - executeStartTime;
               
               // 获取指令执行后的页面状态
-              const pageInfoAfterSupervisor = await this.getPageInfoFromBackground();
+          const pageInfoAfterSupervisor = await this.getPageInfoFromBackground();
               
               // 构建执行历史记录
               const supervisorRecord = {
@@ -258,7 +258,7 @@ class SmartExecutor {
             const executeTime = performance.now() - executeStartTime;
             
             // 获取指令执行后的页面状态
-            const pageInfoAfterSupervisor = await this.pageAnalyzer.getPageInfo();
+            const pageInfoAfterSupervisor = await this.getPageInfoFromBackground();
             
             // 构建执行历史记录
             const supervisorRecord = {
@@ -323,15 +323,23 @@ class SmartExecutor {
     }
   }
 
-
-  // 获取当前状态
-  getStatus() {
-    return {
-      isRunning: this.isRunning,
-      currentTask: this.currentTask,
-      resultsCount: this.executionResults.length,
-      stats: this.executionEngine.getExecutionStats()
-    };
+  // 从 background 获取页面信息
+  async getPageInfoFromBackground() {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'GET_PAGE_INFO' }, (response) => {
+          if (chrome.runtime.lastError) {
+            return reject(new Error(chrome.runtime.lastError.message));
+          }
+          if (!response || !response.ok) {
+            return reject(new Error(response?.error || '获取页面信息失败'));
+          }
+          resolve(response.pageInfo);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   // 停止执行
@@ -344,28 +352,6 @@ class SmartExecutor {
     }
   }
 
-  // 重置
-  reset() {
-    this.stop();
-    this.shouldStop = false;
-    this.executionResults = [];
-    this.executionEngine.clearHistory();
-    console.log('执行器已重置');
-  }
-
-  // 获取执行历史
-  getHistory() {
-    return {
-      results: this.executionResults,
-      engineHistory: this.executionEngine.getExecutionHistory()
-    };
-  }
-
-  // 等待
-  wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   // 发送日志到侧边栏
   sendLog(message) {
     try {
@@ -375,21 +361,6 @@ class SmartExecutor {
       });
     } catch (error) {
       // 忽略发送失败的错误
-    }
-  }
-
-  // 分析页面
-  async analyzePage() {
-    return await this.pageAnalyzer.getPageInfo();
-  }
-
-  // 检查AI是否可用
-  async checkAIAvailability() {
-    try {
-      return await configManager.isConfigComplete();
-    } catch (error) {
-      console.error('检查AI可用性失败:', error);
-      return false;
     }
   }
 
@@ -436,45 +407,6 @@ class SmartExecutor {
       } : null
     };
   }
-
-  // 更新页面信息（统一方法）
-  async updatePageInfo() {
-    const pageLog = '🔍 正在更新页面信息...';
-    console.log(pageLog);
-    this.sendLog(pageLog);
-    
-    const pageStartTime = performance.now();
-    const pageInfo = await this.getPageInfoFromBackground();
-    const pageTime = performance.now() - pageStartTime;
-    
-    const pageResultLog = `✅ 页面信息更新完成 (${pageTime.toFixed(0)}ms)`;
-    console.log(pageResultLog);
-    this.sendLog(pageResultLog);
-    
-    // 等待页面稳定
-    await this.wait(500);
-    
-    return pageInfo;
-  }
-
-  // 通过 background 获取页面信息
-  async getPageInfoFromBackground() {
-    return await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: 'GET_PAGE_INFO' }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else if (response && response.ok && response.pageInfo) {
-          resolve(response.pageInfo);
-        } else if (response && response.error) {
-          reject(new Error(response.error));
-        } else {
-          reject(new Error('获取页面信息失败'));
-        }
-      });
-    });
-  }
-
-
 
 }
 

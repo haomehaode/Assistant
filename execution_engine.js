@@ -2,7 +2,7 @@
 class ExecutionEngine {
   constructor() {
     this.executionHistory = [];
-    this.maxHistorySize = 100;
+    this.maxHistorySize = 2;
   }
 
   // 执行AI指令
@@ -104,48 +104,6 @@ class ExecutionEngine {
       withErrors: withErrors,
       errorRate: total > 0 ? Math.round((withErrors / total) * 100) : 0
     };
-  }
-
-  // 通过CDP nodeid查找元素
-  findElementByNodeId(nodeId) {
-    try {
-      console.log(`🔍 查找nodeid: ${nodeId}`);
-      
-      // 使用CDP的nodeid来查找元素
-      const element = document.querySelector(`[data-node-id="${nodeId}"]`);
-      
-      if (element) {
-        console.log(`✅ 找到元素: ${element.tagName}#${element.id || element.className || 'unnamed'}`);
-        
-        if (this.isElementVisible(element)) {
-          console.log(`✅ 元素可见，可以操作`);
-          return element;
-        } else {
-          console.log(`❌ 元素不可见`);
-          return null;
-        }
-      } else {
-        console.log(`❌ 未找到nodeid对应的元素: ${nodeId}`);
-        return null;
-      }
-    } catch (e) {
-      console.error(`❌ CDP nodeid查找失败: ${nodeId}`, e);
-    }
-    return null;
-  }
-
-  // 检查元素是否可见
-  isElementVisible(element) {
-    if (!element) return false;
-    
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    
-    return rect.width > 0 && 
-           rect.height > 0 && 
-           style.display !== 'none' && 
-           style.visibility !== 'hidden' &&
-           style.opacity !== '0';
   }
 }
 

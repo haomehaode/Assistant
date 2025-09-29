@@ -1,6 +1,3 @@
-// 内容脚本：执行智能页面任务
-
-
 // 加载智能执行器相关脚本
 const scripts = [
   'config.js',
@@ -23,8 +20,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ type: 'PONG' });
     return true;
   }
-  
-  // GET_PAGE_INFO 由 background 统一提供
   
   if (msg?.type === 'EXEC_SMART_TASK') {
     executeSmartTask(msg.taskOutline, msg.options, msg.originalTaskPlan, msg.originalTaskDescription).then(r => sendResponse({ ok: true, data: r })).catch(e => sendResponse({ ok: false, error: String(e) }));

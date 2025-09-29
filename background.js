@@ -208,7 +208,7 @@ async function getPageInfo(sender) {
       }
     }
 
-    const attrWhitelist = new Set(['id','class','name','role','aria-label','title','type','value','placeholder','checked','disabled','readonly','href','src','alt','contenteditable','tabindex']);
+    const attrWhitelist = new Set(['id','name','role','aria-label','title','type','value','placeholder','checked','disabled','readonly','href','src','alt','contenteditable','tabindex']);
     const actionableTags = new Set(['input','textarea','select','button','a','form','label']);
     const semanticTags = new Set(['h1','h2','h3','h4','h5','h6','ul','ol','li','table','tr','td','th','summary','details']);
 
@@ -280,11 +280,11 @@ async function getPageInfo(sender) {
 
       const out = {
         nodeId: backendNodeId,
-        nodeName: name,
-        attributes: {},
-        children: []
+        nodeName: name
       };
-      if (actionable) out.attributes = attrs;
+      if (actionable && attrs && Object.keys(attrs).length > 0) {
+        out.attributes = attrs;
+      }
 
       if (actionable || semanticTags.has(name) || ['p','span','div','li','a','button','label'].includes(name)) {
         const txt = await getInnerText(backendNodeId);
@@ -292,13 +292,15 @@ async function getPageInfo(sender) {
       }
 
       const childIds = childrenByParent.get(node.nodeId) || [];
+      const builtChildren = [];
       for (const cid of childIds) {
         const child = nodeMap.get(cid);
         const built = await buildFilteredTree(child, false);
-        if (built) out.children.push(built);
+        if (built) builtChildren.push(built);
       }
+      if (builtChildren.length > 0) out.children = builtChildren;
 
-      if (!isRoot && !out.text && out.children.length === 0 && !actionable) return null;
+      if (!isRoot && !out.text && (!out.children || out.children.length === 0) && !actionable) return null;
       return out;
     };
 
