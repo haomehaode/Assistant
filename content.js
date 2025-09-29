@@ -2,7 +2,6 @@
 const scripts = [
   'config.js',
   'ai_service.js',
-  'execution_engine.js',
   'smart_executor.js'
 ];
 

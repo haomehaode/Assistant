@@ -70,14 +70,12 @@ Assistant/
 ├── manifest.json          # 扩展配置文件
 ├── sidepanel.html         # 侧边栏界面
 ├── sidepanel.js           # 侧边栏逻辑
-├── content.js             # 内容脚本
-├── background.js          # 后台脚本
+├── content.js             # 内容脚本（注入与消息桥接）
+├── background.js          # 后台脚本（CDP 获取页面信息与执行动作）
 ├── options.html           # 配置页面
 ├── options.js             # 配置逻辑
 ├── config.js              # 配置管理器
 ├── ai_service.js          # AI服务接口
-├── page_analyzer.js       # 页面分析器
-├── execution_engine.js    # 执行引擎
 ├── smart_executor.js      # 智能执行器
 └── icons/                 # 图标资源
     ├── icon16.png
@@ -96,9 +94,33 @@ Assistant/
 
 #### 🔧 工具组件
 - **ConfigManager**：统一配置管理
-- **PageAnalyzer**：页面结构分析（CDP协议）
-- **ExecutionEngine**：指令执行引擎
-- **SmartExecutor**：智能任务执行协调器
+- **Background(CDP)**：通过 `background.js` 使用 CDP 提供页面信息与动作
+- **SmartExecutor**：单类负责编排与执行（内置执行逻辑与统计）
+
+### 运行逻辑概览
+
+1. 侧边栏/其它入口发起任务
+   - 发送 `EXEC_SMART_TASK` 到扩展。
+2. 后台转发到页面侧执行
+   - `background.js` 等待 `content.js` 就绪后，将任务消息转发给当前页的内容脚本。
+3. 内容脚本注入与桥接
+   - `content.js` 注入 `config.js`、`ai_service.js`、`smart_executor.js`，实例化并复用 `SmartExecutor`，接收 `EXEC_SMART_TASK`/`STOP_EXECUTION`/`PING`。
+4. 智能编排与执行（页面侧）
+   - `SmartExecutor` 调用 `getPageInfoFromBackground()` 获取页面快照（URL/标题/viewport/过滤后的 DOM）。
+   - 调用 `ai_service.getExecutionInstructions(...)` 生成下一步动作；
+   - 执行动作时发送 `EXECUTE_ACTION` 给 `background.js`，由 CDP 在真实页面执行（点击/输入/滚动/导航/提取等）。
+   - 每步后再次取 `GET_PAGE_INFO`，基于变化继续迭代，直至 `completed` 或被停止。
+5. 日志与结果
+   - 执行中通过 `EXECUTION_LOG` 推送到侧边栏进行展示；最终返回迭代次数与执行统计。
+
+### 消息与数据流
+
+- 侧边栏 → 后台：`EXEC_SMART_TASK`
+- 后台 → 内容脚本：`EXEC_SMART_TASK`（转发）
+- 内容脚本 ↔ 智能执行器：函数调用（同页）
+- 智能执行器 → 后台：`GET_PAGE_INFO`、`EXECUTE_ACTION`
+- 后台 ↔ CDP：`Page.*`、`DOM.*`、`Input.*` 等命令
+- 智能执行器 → 侧边栏：`EXECUTION_LOG`（实时日志）
 
 ### 工作流程
 
@@ -106,7 +128,7 @@ Assistant/
 2. **任务规划智能体**：AI分析任务并生成结构化规划
 3. **页面分析**：获取当前页面的CDP格式信息
 4. **执行智能体**：AI分析页面变化和执行历史，生成具体操作指令
-5. **指令执行**：执行引擎执行具体操作
+5. **指令执行**：由 `SmartExecutor` 通过后台 CDP 执行具体操作
 6. **变化感知**：AI对比页面变化判断操作成功与否
 7. **监督智能体**：失败时AI分析原因并重新规划
 8. **智能决策**：AI自主判断任务完成状态
@@ -137,10 +159,10 @@ Assistant/
 
 ### 自定义开发
 
-- **添加新操作**：在 `execution_engine.js` 中添加新的动作类型
+- **添加新操作**：在 `background.js` 的 `executeActionViaCDP` 中添加新的动作类型
 - **扩展AI智能体**：在 `ai_service.js` 中修改智能体的提示词和行为
-- **优化页面分析**：修改 `page_analyzer.js` 中的页面信息提取逻辑
-- **调整执行流程**：修改 `smart_executor.js` 中的协调逻辑
+- **优化页面分析**：修改 `background.js` 的 `getPageInfo` 逻辑
+- **调整执行流程**：修改 `smart_executor.js` 中的编排与执行逻辑
 
 ### AI智能体定制
 

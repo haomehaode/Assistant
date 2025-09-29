@@ -1,7 +1,8 @@
-// 智能执行器：整合页面分析、AI交互和执行引擎
+// 智能执行器：整合页面分析、AI交互和执行逻辑（单类）
 class SmartExecutor {
   constructor() {
-    this.executionEngine = new ExecutionEngine();
+    this.executionHistory = [];
+    this.maxHistorySize = 2;
     this.isRunning = false;
     this.currentTask = null;
     this.executionResults = [];
@@ -105,7 +106,7 @@ class SmartExecutor {
           this.sendLog(executeLog);
           
           const executeStartTime = performance.now();
-          const result = await this.executionEngine.executeInstruction(instruction);
+          const result = await this.executeInstruction(instruction);
           const executeTime = performance.now() - executeStartTime;
           
           // 获取指令执行后的页面状态
@@ -160,7 +161,7 @@ class SmartExecutor {
               this.sendLog(executeLog);
               
               const executeStartTime = performance.now();
-              const supervisorResult = await this.executionEngine.executeInstruction(failureResult.nextInstruction);
+              const supervisorResult = await this.executeInstruction(failureResult.nextInstruction);
               const executeTime = performance.now() - executeStartTime;
               
               // 获取指令执行后的页面状态
@@ -254,7 +255,7 @@ class SmartExecutor {
             this.sendLog(executeLog);
             
             const executeStartTime = performance.now();
-            const supervisorResult = await this.executionEngine.executeInstruction(failureResult.nextInstruction);
+            const supervisorResult = await this.executeInstruction(failureResult.nextInstruction);
             const executeTime = performance.now() - executeStartTime;
             
             // 获取指令执行后的页面状态
@@ -310,7 +311,7 @@ class SmartExecutor {
         stopped: this.shouldStop,
         results: this.executionResults,
         iterations: iteration,
-        stats: this.executionEngine.getExecutionStats()
+        stats: this.getExecutionStats()
       };
 
     } catch (error) {
@@ -321,6 +322,78 @@ class SmartExecutor {
       this.currentTask = null;
       this.shouldStop = false; // 重置停止标志
     }
+  }
+
+  // 执行AI指令（原 ExecutionEngine.executeInstruction）
+  async executeInstruction(instruction) {
+    const startLog = `🔧 开始执行 ${instruction.action} 指令`;
+    console.log(startLog);
+    this.sendLog(startLog);
+    
+    const startTime = performance.now();
+    let result = {
+      action: instruction.action,
+      description: instruction.description,
+      timestamp: new Date().toISOString(),
+      duration: 0,
+      error: null,
+      data: null
+    };
+
+    try {
+      const action = instruction.action;
+      const execLog = `🚀 通过CDP执行动作: ${action}`;
+      console.log(execLog);
+      this.sendLog(execLog);
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'EXECUTE_ACTION', ...instruction }, (res) => {
+          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+          if (!res || !res.ok) return reject(new Error(res?.error || '执行失败'));
+          resolve(res.data);
+        });
+      });
+      result.data = response;
+
+      const successLog = `✅ ${instruction.action} 指令执行成功`;
+      console.log(successLog);
+      this.sendLog(successLog);
+    } catch (error) {
+      result.error = error.message;
+      const errorLog = `❌ ${instruction.action} 指令执行失败: ${error.message}`;
+      console.error(errorLog);
+      this.sendLog(errorLog);
+    }
+
+    const endTime = performance.now();
+    result.duration = Math.round(endTime - startTime);
+
+    this.recordExecution(instruction, result);
+    return result;
+  }
+
+  // 记录执行历史（原 ExecutionEngine.recordExecution）
+  recordExecution(instruction, result) {
+    this.executionHistory.push({
+      instruction: instruction,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    if (this.executionHistory.length > this.maxHistorySize) {
+      this.executionHistory = this.executionHistory.slice(-this.maxHistorySize);
+    }
+  }
+
+  // 获取执行统计（原 ExecutionEngine.getExecutionStats）
+  getExecutionStats() {
+    const total = this.executionHistory.length;
+    const withErrors = this.executionHistory.filter(r => r.result.error).length;
+    const withoutErrors = total - withErrors;
+    return {
+      total: total,
+      withoutErrors: withoutErrors,
+      withErrors: withErrors,
+      errorRate: total > 0 ? Math.round((withErrors / total) * 100) : 0
+    };
   }
 
   // 从 background 获取页面信息
