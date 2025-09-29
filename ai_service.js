@@ -184,12 +184,15 @@ class AIService {
   }
 
   // 获取执行指令
-  async getExecutionInstructions(pageInfo, previousResults = [], originalTaskPlan = null) {
+  async getExecutionInstructions(pageInfo, previousResults = [], originalTaskPlan = null, originalTaskDescription = null) {
     // 从原始任务规划中提取web_content_tasks
     if (originalTaskPlan && originalTaskPlan.sub_tasks && originalTaskPlan.sub_tasks.length > 0) {
       const webContentTasks = originalTaskPlan.sub_tasks[0].web_content_tasks || [];
       
       const systemPrompt = `你是一个智能执行器。请根据当前页面状态和执行历史，决定下一步要做什么。
+
+## 用户原始任务描述：
+${originalTaskDescription || '未提供原始任务描述'}
 
 ## 任务规划（包含web_content_tasks）：
 ${JSON.stringify(originalTaskPlan, null, 2)}
@@ -286,8 +289,11 @@ ${JSON.stringify(pageInfo, null, 2)}
   }
 
   // 监督智能体：分析失败并直接给出解决方案
-  async analyzeFailureAndProvideSolution(executionRecord, pageInfo, originalTaskPlan, executionResults) {
+  async analyzeFailureAndProvideSolution(executionRecord, pageInfo, originalTaskPlan, executionResults, originalTaskDescription = null) {
     const system = `你是一个执行故障分析和解决方案专家。请分析执行失败的原因，并直接提供解决方案。
+
+## 用户原始任务描述：
+${originalTaskDescription || '未提供原始任务描述'}
 
 ## 执行错误信息：
 - 指令: ${executionRecord.instruction ? JSON.stringify(executionRecord.instruction, null, 2) : '无指令（异常）'}

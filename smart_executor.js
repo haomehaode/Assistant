@@ -16,7 +16,7 @@ class SmartExecutor {
   }
 
   // 执行智能任务
-  async executeSmartTask(taskOutline, options = {}, originalTaskPlan = null) {
+  async executeSmartTask(taskOutline, options = {}, originalTaskPlan = null, originalTaskDescription = null) {
     if (this.isRunning) {
       throw new Error('任务正在执行中，请等待完成');
     }
@@ -24,6 +24,7 @@ class SmartExecutor {
     this.isRunning = true;
     this.currentTask = taskOutline;
     this.executionResults = [];
+    this.originalTaskDescription = originalTaskDescription; // 保存原始任务描述
     
     try {
       console.log('开始执行智能任务:', taskOutline);
@@ -58,7 +59,8 @@ class SmartExecutor {
           const instruction = await aiService.getExecutionInstructions(
             currentPageInfo, 
             this.executionResults,
-            currentTaskPlan
+            currentTaskPlan,
+            this.originalTaskDescription
           );
           const instructionTime = performance.now() - instructionStartTime;
           
@@ -392,7 +394,8 @@ class SmartExecutor {
       result, 
       currentPageInfo, 
       currentTaskPlan,
-      this.executionResults
+      this.executionResults,
+      this.originalTaskDescription
     );
     
     console.log('📊 失败分析结果:', analysisResult);

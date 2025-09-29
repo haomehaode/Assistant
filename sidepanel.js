@@ -87,7 +87,8 @@ async function executePlan(plan) {
             type: 'EXEC_SMART_TASK',
             taskOutline: node.web_content_tasks,
             options: { maxIterations: 10 },
-            originalTaskPlan: plan // 传递原始任务规划
+            originalTaskPlan: plan, // 传递原始任务规划
+            originalTaskDescription: prompt // 传递原始任务描述
           }, (response) => {
             if (chrome.runtime.lastError) {
               reject(new Error(chrome.runtime.lastError.message));

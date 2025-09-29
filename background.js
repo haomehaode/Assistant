@@ -20,7 +20,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   
   if (msg && msg.type === 'EXEC_SMART_TASK') {
     console.log('执行智能任务:', msg.taskOutline);
-    executeSmartTask(msg.taskOutline, msg.options, sender)
+    executeSmartTask(msg.taskOutline, msg.options, sender, msg.originalTaskPlan, msg.originalTaskDescription)
       .then((r) => {
         console.log('智能任务执行成功:', r);
         sendResponse({ ok: true, data: r });
@@ -93,7 +93,7 @@ async function getActiveTab() {
 }
 
 // 执行智能任务
-async function executeSmartTask(taskOutline, options, sender) {
+async function executeSmartTask(taskOutline, options, sender, originalTaskPlan = null, originalTaskDescription = null) {
   console.log('执行智能任务:', taskOutline, 'sender:', sender);
   
   if (!taskOutline || !Array.isArray(taskOutline)) {
@@ -114,7 +114,9 @@ async function executeSmartTask(taskOutline, options, sender) {
       chrome.tabs.sendMessage(tab.id, {
         type: 'EXEC_SMART_TASK',
         taskOutline: taskOutline,
-        options: options
+        options: options,
+        originalTaskPlan: originalTaskPlan,
+        originalTaskDescription: originalTaskDescription
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('消息发送失败:', chrome.runtime.lastError);
@@ -127,7 +129,9 @@ async function executeSmartTask(taskOutline, options, sender) {
               chrome.tabs.sendMessage(tab.id, {
                 type: 'EXEC_SMART_TASK',
                 taskOutline: taskOutline,
-                options: options
+                options: options,
+                originalTaskPlan: originalTaskPlan,
+                originalTaskDescription: originalTaskDescription
               }, (retryResponse) => {
                 if (chrome.runtime.lastError) {
                   reject(new Error(`重试也失败: ${chrome.runtime.lastError.message}`));
