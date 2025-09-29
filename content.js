@@ -99,6 +99,9 @@ scripts.forEach(src => {
   document.head.appendChild(script);
 });
 
+// 全局执行器实例
+let globalExecutor = null;
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'PING') {
     sendResponse({ type: 'PONG' });
@@ -128,6 +131,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     executeSmartTask(msg.taskOutline, msg.options, msg.originalTaskPlan, msg.originalTaskDescription).then(r => sendResponse({ ok: true, data: r })).catch(e => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
+  
+  if (msg?.type === 'STOP_EXECUTION') {
+    console.log('收到停止执行信号');
+    if (globalExecutor) {
+      globalExecutor.stop();
+      console.log('执行器已停止');
+    }
+    sendResponse({ ok: true, message: '停止信号已处理' });
+    return true;
+  }
 });
 
 
@@ -148,6 +161,7 @@ async function executeSmartTask(taskOutline, options = {}, originalTaskPlan = nu
   });
   
   const executor = new window.SmartExecutor();
+  globalExecutor = executor; // 保存全局引用
   await executor.init();
   return await executor.executeSmartTask(taskOutline, options, originalTaskPlan, originalTaskDescription);
 }

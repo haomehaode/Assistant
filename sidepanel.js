@@ -3,6 +3,12 @@
 const elPrompt = document.getElementById('prompt');
 const elLog = document.getElementById('log');
 const elStatus = document.getElementById('status');
+const elBtnGo = document.getElementById('btn-go');
+const elBtnStop = document.getElementById('btn-stop');
+
+// 全局状态管理
+let isExecuting = false;
+let currentExecutor = null;
 
 function now() {
   const d = new Date();
@@ -22,6 +28,19 @@ function clearLog() {
 function log(type, message) {
   const line = `[${now()}] [${type}] ${message}`;
   appendLocal(line);
+}
+
+// 更新按钮状态
+function updateButtonState(executing) {
+  isExecuting = executing;
+  elBtnGo.disabled = executing;
+  elBtnStop.disabled = !executing;
+  
+  if (executing) {
+    elBtnGo.textContent = '执行中...';
+  } else {
+    elBtnGo.textContent = '执行';
+  }
 }
 
 function formatBrowserTask(browserTask) {
@@ -132,8 +151,14 @@ async function executePlan(plan) {
 }
 
 
-document.getElementById('btn-go').addEventListener('click', async () => {
+elBtnGo.addEventListener('click', async () => {
   try {
+    // 检查是否正在执行
+    if (isExecuting) {
+      log('WARN', '任务正在执行中，请等待完成或点击停止按钮');
+      return;
+    }
+    
     const prompt = elPrompt.value.trim();
     if (!prompt) { elStatus.textContent = '请输入任务'; return; }
     
@@ -144,6 +169,9 @@ document.getElementById('btn-go').addEventListener('click', async () => {
       log('ERROR', 'API配置不完整，请前往选项页面设置');
       return;
     }
+    
+    // 更新按钮状态
+    updateButtonState(true);
     
     // 清空日志
     clearLog();
@@ -209,6 +237,42 @@ document.getElementById('btn-go').addEventListener('click', async () => {
   } catch (e) {
     elStatus.textContent = '失败: ' + e.message;
     log('ERROR', e.message || String(e));
+  } finally {
+    // 重置按钮状态
+    updateButtonState(false);
+    currentExecutor = null;
+  }
+});
+
+// 停止按钮事件监听器
+elBtnStop.addEventListener('click', async () => {
+  try {
+    if (!isExecuting) {
+      log('WARN', '当前没有正在执行的任务');
+      return;
+    }
+    
+    log('STOP', '用户请求停止任务执行...');
+    elStatus.textContent = '正在停止...';
+    
+    // 发送停止消息到content script
+    try {
+      await sendToActiveTab({ type: 'STOP_EXECUTION' });
+      log('STOP', '停止信号已发送');
+    } catch (error) {
+      log('ERROR', `发送停止信号失败: ${error.message}`);
+    }
+    
+    // 立即更新UI状态
+    updateButtonState(false);
+    elStatus.textContent = '任务已停止';
+    currentExecutor = null;
+    
+    log('STOP', '任务执行已停止');
+    
+  } catch (error) {
+    log('ERROR', `停止任务失败: ${error.message}`);
+    elStatus.textContent = '停止失败';
   }
 });
 

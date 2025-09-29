@@ -6,6 +6,7 @@ class SmartExecutor {
     this.isRunning = false;
     this.currentTask = null;
     this.executionResults = [];
+    this.shouldStop = false; // 添加停止标志
     // 移除 maxIterations 和 maxSupervisions 限制
   }
 
@@ -43,13 +44,20 @@ class SmartExecutor {
       let currentTaskPlan = originalTaskPlan; // 新增：当前任务规划
 
       // 移除迭代次数限制，让AI自己判断是否完成
-      while (!completed) {
+      while (!completed && !this.shouldStop) {
         const stepStartTime = performance.now();
         const stepLog = `=== 执行第 ${iteration + 1} 次迭代 ===`;
         console.log(`\n${stepLog}`);
         this.sendLog(stepLog);
         
         try {
+          // 检查是否需要停止
+          if (this.shouldStop) {
+            console.log('🛑 检测到停止信号，退出执行循环');
+            this.sendLog('🛑 检测到停止信号，退出执行循环');
+            break;
+          }
+          
           // 获取AI指令（AI自己判断进度）
           const instructionLog = '🤖 正在获取AI指令...';
           console.log(instructionLog);
@@ -301,7 +309,8 @@ class SmartExecutor {
       }
 
       return {
-        success: completed,
+        success: completed && !this.shouldStop,
+        stopped: this.shouldStop,
         results: this.executionResults,
         iterations: iteration,
         stats: this.executionEngine.getExecutionStats()
@@ -313,6 +322,7 @@ class SmartExecutor {
     } finally {
       this.isRunning = false;
       this.currentTask = null;
+      this.shouldStop = false; // 重置停止标志
     }
   }
 
@@ -330,15 +340,17 @@ class SmartExecutor {
   // 停止执行
   stop() {
     if (this.isRunning) {
+      this.shouldStop = true;
       this.isRunning = false;
       this.currentTask = null;
-      console.log('任务已停止');
+      console.log('任务停止请求已发送');
     }
   }
 
   // 重置
   reset() {
     this.stop();
+    this.shouldStop = false;
     this.executionResults = [];
     this.executionEngine.clearHistory();
     console.log('执行器已重置');
